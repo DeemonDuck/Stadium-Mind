@@ -20,3 +20,5 @@ Thumbs.db
 
 *__pycache__/
 *__init__.py
+
+*.egg-info/
