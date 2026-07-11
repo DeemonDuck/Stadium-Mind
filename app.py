@@ -23,7 +23,7 @@ from core.crowd_sim import CrowdSimulator
 from core.incidents import Incident, sort_by_urgency
 from core.graph_layout import compute_layout
 from core.visualization import build_congestion_figure
-from agents.organizer_agent import get_organizer_recommendation
+from agents.organizer_agent import get_organizer_recommendation, GROQ_API_KEY
 from agents.fan_agent import get_fan_directions
 
 st.set_page_config(page_title="StadiumMind", page_icon="🏟️", layout="wide")
@@ -48,9 +48,15 @@ simulator = st.session_state.simulator
 positions = st.session_state.positions
 
 st.title("🏟️ StadiumMind")
+_mode_note = (
+    "Live AI mode - responses are generated in real time by Groq."
+    if GROQ_API_KEY
+    else "Running in mock mode until a real GROQ_API_KEY is configured "
+         "(.env locally, or Secrets on Streamlit Cloud)."
+)
 st.caption(
     "One shared crowd-intelligence layer powering organizer decisions "
-    "and fan navigation. Running in mock mode until a real GROQ_API_KEY is added to .env."
+    f"and fan navigation. {_mode_note}"
 )
 
 tab1, tab2 = st.tabs(["📊 Organizer Dashboard", "🧭 Fan Assistant"])
@@ -94,7 +100,7 @@ def render_live_panel():
     st.session_state["latest_trends"] = trends
 
     fig = build_congestion_figure(graph, simulator, positions)
-    st.plotly_chart(fig, width="stretch", key="organizer_map")
+    st.plotly_chart(fig, width="stretch", key="organizer_map", config={})
     st.caption("🟢 Low &nbsp;&nbsp; 🟡 Moderate &nbsp;&nbsp; 🟠 High &nbsp;&nbsp; 🔴 Critical", unsafe_allow_html=True)
 
     # ACCESSIBILITY: the map above is a Plotly canvas, which screen readers
@@ -196,5 +202,5 @@ with tab2:
             st.markdown("\n".join(f"{i+1}. {stop}" for i, stop in enumerate(path)))
 
             fig = build_congestion_figure(graph, simulator, positions, highlight_path=path)
-            st.plotly_chart(fig, width="stretch", key="fan_map")
+            st.plotly_chart(fig, width="stretch", key="fan_map", config={})
             st.caption("🟢 Low &nbsp;&nbsp; 🟡 Moderate &nbsp;&nbsp; 🟠 High &nbsp;&nbsp; 🔴 Critical &nbsp;&nbsp; 🔵 Chosen route", unsafe_allow_html=True)
