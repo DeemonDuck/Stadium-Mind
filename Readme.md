@@ -8,6 +8,14 @@ Built for the PromptWars 2026 "Smart Stadiums & Tournament Operations" challenge
 
 ---
 
+## 🚀 Live Demo
+
+**Try it now: [stadiummind.streamlit.app](https://stadiummind.streamlit.app/)**
+
+No setup needed — it's deployed and running in mock mode by default (see [Getting Started](#getting-started) below to run it locally with a real Groq key for live AI output).
+
+---
+
 ## The Idea
 
 Most crowd-management solutions treat "help organizers" and "help fans" as two separate features bolted together. StadiumMind treats them as **one system**:
