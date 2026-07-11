@@ -138,3 +138,9 @@ For the full step-by-step build log, bugs caught along the way, and reasoning be
 ## Author
 
 **Ridham** — [@DeemonDuck](https://github.com/DeemonDuck)
+
+## License
+
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+
+Copyright © 2026 Ridham Taneja. Commercial use requires prior written permission — reach out at your-ridham643@gmail.com.
