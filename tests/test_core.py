@@ -113,6 +113,27 @@ def test_congestion_aware_path_matches_plain_path_when_uncongested():
     assert aware_path == plain_path
 
 
+def test_openai_client_can_be_constructed():
+    """
+    Regression test for a real deployment bug: with no GROQ_API_KEY set,
+    mock mode means agents/organizer_agent.py and agents/fan_agent.py never
+    actually import/construct the OpenAI client - so the test suite was
+    blind to a real incompatibility between the pinned openai version and
+    a newer httpx (older openai versions hard-code a 'proxies' argument
+    that httpx 0.28+ removed, causing a TypeError at construction time,
+    not just at the API-call stage). This surfaced on Streamlit Cloud,
+    where a fresh install pulled the newest httpx against an old openai pin.
+
+    Constructing the client (unlike calling .create()) makes no network
+    call, so this can run in any CI environment - no key or network needed,
+    just proof the client builds without raising.
+    """
+    from openai import OpenAI
+
+    client = OpenAI(api_key="dummy-key-for-testing", base_url="https://api.groq.com/openai/v1")
+    assert client is not None
+
+
 def test_explain_route_choice_confirms_direct_route_when_uncongested():
     G = build_venue_graph()
     sim = CrowdSimulator(G, seed=1)
