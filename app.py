@@ -97,6 +97,22 @@ def render_live_panel():
     st.plotly_chart(fig, width="stretch", key="organizer_map")
     st.caption("🟢 Low &nbsp;&nbsp; 🟡 Moderate &nbsp;&nbsp; 🟠 High &nbsp;&nbsp; 🔴 Critical", unsafe_allow_html=True)
 
+    # ACCESSIBILITY: the map above is a Plotly canvas, which screen readers
+    # generally can't parse meaningfully. This table has the exact same
+    # data in a real HTML table Streamlit renders accessibly, so the
+    # information isn't locked behind a visual-only chart.
+    with st.expander("📋 View congestion data as a text table (screen-reader friendly)"):
+        table_rows = [
+            {
+                "Location": node,
+                "Congestion": f"{score}/100",
+                "Status": simulator.get_congestion_label(node),
+                "Trend": f"{trends[node]['trend_pct']}%",
+            }
+            for node, score in sorted(congestion.items(), key=lambda x: -x[1])
+        ]
+        st.dataframe(table_rows, width="stretch", hide_index=True)
+
     st.markdown("**Top congestion hotspots**")
     top_nodes = sorted(congestion.items(), key=lambda x: -x[1])[:4]
     cols = st.columns(len(top_nodes))
@@ -172,6 +188,12 @@ with tab2:
                 )
             st.success(directions)
             st.caption(f"Why this route: {explanation}")
+
+            # ACCESSIBILITY: the highlighted line on the map below conveys
+            # the same route, but only visually - this numbered list is a
+            # real text equivalent, not dependent on seeing/parsing the chart.
+            st.markdown("**Route, step by step:**")
+            st.markdown("\n".join(f"{i+1}. {stop}" for i, stop in enumerate(path)))
 
             fig = build_congestion_figure(graph, simulator, positions, highlight_path=path)
             st.plotly_chart(fig, width="stretch", key="fan_map")
