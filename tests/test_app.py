@@ -130,8 +130,16 @@ def test_volunteer_board_refresh_populates_tasks_and_language_selector_translate
     tasks from current conditions, and switching the language selector
     translates their descriptions (this project's newest multilingual
     feature, extending the Fan Assistant's translate pattern to the
-    Volunteer & Staff Board)."""
+    Volunteer & Staff Board).
+
+    Needs a congestion spike first: the simulator seeds every node to
+    random.randint(10, 30) (seed=42, so deterministic but always below
+    DEFAULT_CONGESTION_THRESHOLD=50), and no incidents exist on a fresh
+    load either - so refreshing the board with no setup always produces
+    zero tasks. 'Spike Gate_A' (tab 1) is what gives the board something
+    to generate."""
     at = _run_app()
+    _click(at, "🚨 Spike Gate_A")
     _click(at, "🔄 Refresh Tasks from Current Conditions")
     assert not at.exception
     assert len(at.session_state["volunteer_tasks"]) > 0
