@@ -20,7 +20,10 @@ equivalent, not just a nice-to-have.
 
 from __future__ import annotations  # allows `list | None` etc. on Python < 3.10
 
+import networkx as nx
 import plotly.graph_objects as go
+
+from core.crowd_sim import CrowdSimulator
 
 CONGESTION_COLORS = {
     "low": "#2ecc71",       # green
@@ -43,7 +46,9 @@ NODE_TYPE_SIZE = {
 }
 
 
-def build_congestion_figure(graph, simulator, positions: dict, highlight_path: list | None = None) -> go.Figure:
+def build_congestion_figure(
+    graph: nx.Graph, simulator: CrowdSimulator, positions: dict, highlight_path: list | None = None
+) -> go.Figure:
     """
     Args:
         graph: the venue graph
@@ -130,12 +135,15 @@ def build_congestion_figure(graph, simulator, positions: dict, highlight_path: l
 
 
 if __name__ == "__main__":
-    # Quick manual check: python core/visualization.py
-    # (writes an HTML file you can open to visually inspect the map)
-    from crowd_sim import CrowdSimulator
-    from graph_layout import compute_layout
-    from routing import congestion_weighted_path
-    from venue import build_venue_graph
+    # Quick manual check: python -m core.visualization
+    # (writes an HTML file you can open to visually inspect the map - must
+    # run as a module, not `python core/visualization.py` directly, since
+    # the module-level `from core.crowd_sim import CrowdSimulator` import
+    # above needs the core package resolvable - same convention already
+    # used by agents/*.py and core/tasks.py)
+    from core.graph_layout import compute_layout
+    from core.routing import congestion_weighted_path
+    from core.venue import build_venue_graph
 
     G = build_venue_graph()
     sim = CrowdSimulator(G, seed=1)

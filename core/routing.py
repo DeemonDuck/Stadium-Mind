@@ -109,9 +109,12 @@ def explain_route_choice(graph: nx.Graph, simulator: CrowdSimulator, chosen_path
 
 
 if __name__ == "__main__":
-    # Quick manual check: python core/routing.py
-    from crowd_sim import CrowdSimulator
-    from venue import build_venue_graph
+    # Quick manual check: python -m core.routing
+    # (module-level `from core.crowd_sim import CrowdSimulator` above is
+    # needed for the CrowdSimulator type hint on congestion_weighted_path,
+    # which means this file must be run as a module, not `python core/routing.py`
+    # directly - same convention already used by agents/*.py and core/tasks.py)
+    from core.venue import build_venue_graph
 
     G = build_venue_graph()
     sim = CrowdSimulator(G, seed=1)
