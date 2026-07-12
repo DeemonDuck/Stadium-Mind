@@ -19,6 +19,7 @@ from __future__ import annotations  # allows `dict | None` etc. on Python < 3.10
 
 import os
 
+import networkx as nx
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -158,7 +159,7 @@ Priority 2 (only include if there's a genuine second issue - an incident or a se
 Keep it concise and actionable - this will be read by staff during a live event, not analyzed later."""
 
 
-def _mock_recommendation(graph, congestion_snapshot: dict, incidents: list, trends: dict | None) -> str:
+def _mock_recommendation(graph: nx.Graph, congestion_snapshot: dict, incidents: list, trends: dict | None) -> str:
     """
     PLACEHOLDER used only when no GROQ_API_KEY is configured.
 
@@ -208,7 +209,7 @@ def _mock_recommendation(graph, congestion_snapshot: dict, incidents: list, tren
 
 
 def get_organizer_recommendation(
-    graph,
+    graph: nx.Graph,
     congestion_snapshot: dict,
     incidents: list | None = None,
     trends: dict | None = None,

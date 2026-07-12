@@ -29,6 +29,8 @@ outward from whatever they connect to," which is exactly the real layout.
 import hashlib
 import math
 
+import networkx as nx
+
 
 def _deterministic_fraction(s: str) -> float:
     """
@@ -42,7 +44,7 @@ def _deterministic_fraction(s: str) -> float:
     return int(digest[:8], 16) / 0xFFFFFFFF
 
 
-def compute_layout(graph) -> dict:
+def compute_layout(graph: nx.Graph) -> dict:
     """
     Args:
         graph: the venue graph

@@ -13,14 +13,16 @@ This is what makes fan navigation "crowd-aware" instead of just a static map.
 
 import networkx as nx
 
+from core.crowd_sim import CrowdSimulator
+
 
 def congestion_weighted_path(
     graph: nx.Graph,
-    simulator,
+    simulator: CrowdSimulator,
     start: str,
     end: str,
     congestion_penalty: float = 3.0,
-):
+) -> tuple[list[str], float]:
     """
     Find a path from start to end that balances distance against congestion.
 
@@ -66,7 +68,7 @@ def congestion_weighted_path(
     return path, real_distance
 
 
-def explain_route_choice(graph: nx.Graph, simulator, chosen_path: list) -> str:
+def explain_route_choice(graph: nx.Graph, simulator: CrowdSimulator, chosen_path: list) -> str:
     """
     Compare the chosen (congestion-aware) path against the plain shortest
     path for the same start/end, and explain in plain English why they

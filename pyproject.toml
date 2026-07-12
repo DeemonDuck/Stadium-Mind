@@ -42,11 +42,6 @@ ignore_missing_imports = true   # streamlit/networkx/plotly/openai/dotenv have i
 warn_unused_ignores = true
 warn_redundant_casts = true
 check_untyped_defs = true
-# Intentionally not using strict/disallow_untyped_defs: this is a hackathon
-# MVP with type hints used where they add clarity (dataclasses, public
-# function signatures), not a fully-annotated codebase. check_untyped_defs
-# still catches real type errors inside unannotated functions.
-#
 # Note on numpy: it's a transitive runtime dep (networkx's internal layout
 # code needs it - see core/graph_layout.py), pinned to numpy<2.4 in
 # requirements.txt because numpy 2.4+ uses PEP 695 stub syntax that mypy
@@ -54,3 +49,13 @@ check_untyped_defs = true
 # any per-module mypy setting (open upstream issue, no config workaround:
 # https://github.com/python/mypy/issues/21178). The version pin is the fix;
 # nothing needed here in the mypy config itself.
+
+# core/ and agents/ are the modules with real test coverage and reused
+# graph/simulator types (nx.Graph, CrowdSimulator) worth enforcing full
+# signatures on. app.py is intentionally left out: it's Streamlit UI-wiring
+# code where most "parameters" are widget return values from an
+# incompletely-stubbed library, so full annotation there is friction with
+# no real payoff.
+[[tool.mypy.overrides]]
+module = ["core.*", "agents.*"]
+disallow_untyped_defs = true

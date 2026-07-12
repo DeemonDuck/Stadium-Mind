@@ -25,6 +25,8 @@ from __future__ import annotations  # allows `int | None` etc. on Python < 3.10
 import random
 from collections import deque
 
+import networkx as nx
+
 
 class CrowdSimulator:
     """
@@ -35,7 +37,7 @@ class CrowdSimulator:
 
     HISTORY_LENGTH = 6  # how many past ticks to remember per node, for trend estimation
 
-    def __init__(self, graph, seed: int | None = None):
+    def __init__(self, graph: nx.Graph, seed: int | None = None):
         """
         Args:
             graph: the venue graph (from core.venue.build_venue_graph)
@@ -121,7 +123,7 @@ class CrowdSimulator:
             return 100 if newest > 0 else 0
         return round(((newest - oldest) / oldest) * 100)
 
-    def estimate_ticks_to_critical(self, node: str, critical_threshold: int = 75):
+    def estimate_ticks_to_critical(self, node: str, critical_threshold: int = 75) -> int | None:
         """
         Linearly extrapolate the recent trend to estimate how many more
         ticks until this node crosses the critical threshold.
