@@ -84,6 +84,24 @@ Prompted by seeing the actual AI evaluation rubric from a prior submission (Code
 - [x] **Closed the actual test gap.** Added `test_openai_client_can_be_constructed` - the test suite's mock-mode design meant it was structurally blind to this exact bug, since real client construction never happened without a real key. Client construction (unlike `.create()`) makes no network call, so this new test needs no key or network access, and now would have caught this before deployment.
 - [x] Full suite re-run: **18 tests passing.**
 
+### Day 5 — closing the named-but-empty gaps: transportation, sustainability, volunteer/staff, and a real Code Quality pass
+
+Scoring at handoff: **94.17/100** overall (Code Quality 86, Problem Statement Alignment 93, Security/Efficiency 100, Testing 98, Accessibility 96). Two of the brief's eight themes - transportation and sustainability - weren't touched at all, and volunteers/venue staff (named in the brief alongside fans/organizers) had no dedicated view. Code Quality's concrete gaps: no lint config, no mypy config, zero test coverage for agents/, and a broad `except Exception` in both agents.
+
+- [x] **Added `core/transport.py`** - mock transit options (metro/bus/shuttle-from-parking/drive) per gate, reusing the existing `Parking_Lot` node rather than a second data model. Added a documented CO2-per-km table (metro < shuttle < bus < car, matching published transit-emissions comparisons) and `recommend_greenest_option()`.
+- [x] **Extended `agents/fan_agent.py`** with `get_transit_directions()` - same mock/live-LLM pattern as the existing `get_fan_directions()`, phrasing a friendly comparison of transit options in the fan's chosen language and highlighting the greenest pick with its real CO2 savings number.
+- [x] **Fan Assistant tab** now has a mode toggle: "Navigate inside the venue" (existing) vs. "Getting to the stadium" (new) - covers Transportation directly, and Sustainability via the CO2 framing built into the same feature (per the two options considered at handoff, went with the simpler, better-integrated one rather than a second standalone sustainability metric system).
+- [x] **Added a session-wide Sustainability Impact panel** to the Organizer Dashboard - running total of CO2 saved across every transit comparison a fan has run this session, updated from the same real `co2_saved_vs_car_grams` figure shown in the Fan Assistant tab.
+- [x] **Added `core/tasks.py`** - turns live congestion hotspots + open incidents into `Task` cards (description, location, priority, status, assignee). Deliberately a plain function over the same data the Organizer Agent reads, not a parser of the organizer's freeform LLM text - keeps it deterministic and unit-testable without mocking an LLM, and avoids re-parsing breaking every time the prompt wording changes.
+- [x] **Added a "Volunteer & Staff Board" tab** - the third persona the brief names. Tasks are keyed by a stable id (`incident::location::description` / `congestion::node`) so re-generating the board merges in new tasks without wiping out an assignee or status a volunteer already set on an existing one - verified this with Streamlit's `AppTest`: set an assignee + status to ASSIGNED, refreshed the board, confirmed both persisted.
+- [x] **Found and fixed a real, previously-invisible bug while writing agent tests.** `GROQ_API_KEY = os.getenv(...) or st.secrets.get(...)` crashes with `StreamlitSecretNotFoundError` (confirmed: a subclass of `FileNotFoundError`) whenever no `secrets.toml` exists *anywhere* - not just when the key is missing from one. This was invisible in every environment actually tested (local `.env` always had a key or the placeholder; Streamlit Cloud always has secrets configured; the old CI workflow only ran `test_core.py`, which never imports `agents/`) - but it directly contradicted the documented "mock mode needs zero config" behavior, and would have crashed `tests/test_agents.py` in CI the moment it tried to import either agent. Fixed with a small `_get_groq_api_key()` helper that catches `FileNotFoundError` specifically around the `st.secrets` call.
+- [x] **Narrowed both agents' broad `except Exception` to `except OpenAIError`** (verified `openai==2.45.0`'s exception hierarchy: `APIConnectionError`/`RateLimitError`/`AuthenticationError`/etc. all descend from `OpenAIError`) - a real fix, not just a lint workaround: this still catches every realistic API failure mode without also silently swallowing bugs in our own code.
+- [x] **Added `pyproject.toml`** - ruff (`E, W, F, B, C4, I, UP, SIM, BLE`, line-length 120) + mypy (`check_untyped_defs`, `ignore_missing_imports` for the untyped streamlit/networkx/plotly stubs). Ran both against the full repo and fixed what they found for real rather than just adding ignores: converted `dict(...)` calls to literals in `visualization.py`, added explicit `strict=` to two `zip()` calls (`True` where lengths are guaranteed equal by construction, `False` where they're deliberately offset by one), sorted imports everywhere, and wrapped a handful of over-120-char lines (prompt strings, one assertion message). The only per-file-ignore is `BLE001` in `tests/*.py`, for the manual `if __name__ == "__main__"` runner blocks that intentionally catch any exception to report per-test pass/fail - a harness pattern, not the anti-pattern the rule targets.
+- [x] **Mypy caught two genuine (if minor) issues, not just missing annotations:** `max(dict, key=dict.get)` types as possibly returning `None` even though it never does when iterating the dict's own keys (switched to `key=lambda k: d[k]`); and `response.choices[0].message.content` is typed `str | None` by the SDK (a tool-call-only or refused response has no text) - all three call sites (`get_organizer_recommendation`, `get_fan_directions`, `get_transit_directions`) now explicitly fall back to their mock response instead of letting a theoretical `None` reach `st.info()`/`st.success()` downstream.
+- [x] **Added `tests/test_transport.py`, `tests/test_tasks.py`, and `tests/test_agents.py`** (the last one closes the exact "zero test coverage for agents/" gap from handoff) - covering the CO2/recommendation logic, task generation/merging, and every deterministic helper in both agents (prompt builders, mock fallbacks, label formatting), all runnable without a real API key. **Full suite: 53 tests passing** (up from 18), verified in a completely clean environment (`env -u GROQ_API_KEY`, no `.env`, no `secrets.toml`) to make sure this actually reflects what CI will see.
+- [x] **Updated `.github/workflows/tests.yml`** - the `test` job now runs `pytest tests/ -v` (previously only `test_core.py`, which is how the secrets bug above stayed hidden), and a new `lint` job runs `ruff check .` and `mypy .` on Python 3.12 (the actual Streamlit Cloud deploy target). Added `requirements-dev.txt` (pytest/ruff/mypy, pinned) kept separate from the runtime `requirements.txt`.
+- [x] Re-ran Streamlit's `AppTest` end-to-end for every new interactive flow - mode toggle, transit comparison (twice, to confirm the sustainability counter updates correctly on the *next* rerun after the button click, same one-rerun lag as the existing `latest_congestion` pattern elsewhere in the app), incident logging + congestion spike + task board refresh, assignee/status widgets, and "clear resolved tasks" - no exceptions anywhere.
+
 ---
 
 ## Setup & Run
@@ -109,7 +127,14 @@ Without a key in `.env`, both agents automatically run in **mock mode** (clearly
 
 Run tests any time with:
 ```bash
-python -m pytest tests/test_core.py -v
-# or, without pytest installed:
+pip install -r requirements-dev.txt
+python -m pytest tests/ -v
+# or, without pytest installed, each test file can also run standalone:
 python tests/test_core.py
+```
+
+Lint/type-check locally with:
+```bash
+ruff check .
+mypy .
 ```
