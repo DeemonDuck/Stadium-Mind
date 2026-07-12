@@ -18,13 +18,15 @@ Run with: streamlit run app.py
 """
 
 import streamlit as st
-from core.venue import build_venue_graph
+
+from agents.fan_agent import get_fan_directions, get_transit_directions
+from agents.organizer_agent import GROQ_API_KEY, get_organizer_recommendation
 from core.crowd_sim import CrowdSimulator
-from core.incidents import Incident, sort_by_urgency
 from core.graph_layout import compute_layout
+from core.incidents import Incident, sort_by_urgency
+from core.tasks import TASK_STATUSES, generate_tasks_from_state, sort_tasks_by_priority
+from core.venue import build_venue_graph
 from core.visualization import build_congestion_figure
-from agents.organizer_agent import get_organizer_recommendation, GROQ_API_KEY
-from agents.fan_agent import get_fan_directions
 
 st.set_page_config(page_title="StadiumMind", page_icon="🏟️", layout="wide")
 
@@ -42,6 +44,18 @@ if "positions" not in st.session_state:
     # Computed once and reused - keeps the map visually stable instead of
     # re-laying-out (and jumping around) on every rerun.
     st.session_state.positions = compute_layout(st.session_state.graph)
+if "volunteer_tasks" not in st.session_state:
+    # {task_id: Task} - keyed by id (not a plain list) so refreshing the
+    # board merges in new tasks without wiping out an existing
+    # assignment/status for a task that's still open.
+    st.session_state.volunteer_tasks = {}
+if "total_co2_saved_grams" not in st.session_state:
+    # Session-level sustainability counter, updated each time a fan uses
+    # the "Getting to the Stadium" transit comparison in the Fan Assistant
+    # tab and a greener-than-driving option is recommended.
+    st.session_state.total_co2_saved_grams = 0.0
+if "total_green_trips" not in st.session_state:
+    st.session_state.total_green_trips = 0
 
 graph = st.session_state.graph
 simulator = st.session_state.simulator
@@ -59,7 +73,9 @@ st.caption(
     f"and fan navigation. {_mode_note}"
 )
 
-tab1, tab2 = st.tabs(["📊 Organizer Dashboard", "🧭 Fan Assistant"])
+tab1, tab2, tab3 = st.tabs(
+    ["📊 Organizer Dashboard", "🧭 Fan Assistant", "🦺 Volunteer & Staff Board"]
+)
 
 
 # ----------------------------------------------------------------------
@@ -122,7 +138,7 @@ def render_live_panel():
     st.markdown("**Top congestion hotspots**")
     top_nodes = sorted(congestion.items(), key=lambda x: -x[1])[:4]
     cols = st.columns(len(top_nodes))
-    for col, (node, score) in zip(cols, top_nodes):
+    for col, (node, score) in zip(cols, top_nodes, strict=True):
         trend_pct = trends[node]["trend_pct"]
         eta = trends[node]["eta_ticks"]
         with col:
@@ -167,40 +183,173 @@ with tab1:
                 )
             st.info(recommendation)
 
+    st.divider()
+    st.subheader("🌱 Sustainability Impact")
+    _trips = st.session_state.total_green_trips
+    _saved_kg = st.session_state.total_co2_saved_grams / 1000
+    if _trips:
+        st.metric(
+            "Estimated CO₂ saved this session",
+            f"{_saved_kg:.2f} kg",
+            help=(
+                "Sum of (driving-alone emissions - chosen transit emissions) for every "
+                "'Getting to the Stadium' comparison run in the Fan Assistant tab, using "
+                "the greenest recommended option each time. See core/transport.py."
+            ),
+        )
+        st.caption(f"Across {_trips} fan transit comparison{'s' if _trips != 1 else ''} so far this session.")
+    else:
+        st.caption(
+            "No transit comparisons yet - once fans use 'Getting to the Stadium' in the "
+            "Fan Assistant tab, estimated CO₂ savings will show up here."
+        )
+
 # ----------------------------------------------------------------------
 # TAB 2: Fan Assistant
 # ----------------------------------------------------------------------
 with tab2:
-    st.subheader("Where do you want to go?")
+    fan_mode = st.radio(
+        "What do you need help with?",
+        ["🧭 Navigate inside the venue", "🚌 Getting to the stadium"],
+        horizontal=True,
+    )
 
-    all_nodes = sorted(graph.nodes)
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        start = st.selectbox("Your current location", all_nodes, index=all_nodes.index("Gate_A"))
-    with col2:
-        destination = st.selectbox(
-            "Destination", all_nodes, index=all_nodes.index("Restroom_2")
-        )
-    with col3:
-        language = st.selectbox("Preferred language", ["English", "Hindi", "Spanish", "French"])
+    if fan_mode == "🧭 Navigate inside the venue":
+        st.subheader("Where do you want to go?")
 
-    if st.button("Get Directions", type="primary"):
-        if start == destination:
-            st.warning("You're already there!")
-        else:
-            with st.spinner("Finding the best route..."):
-                directions, path, explanation = get_fan_directions(
-                    graph, simulator, start, destination, language
+        all_nodes = sorted(graph.nodes)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            start = st.selectbox("Your current location", all_nodes, index=all_nodes.index("Gate_A"))
+        with col2:
+            destination = st.selectbox(
+                "Destination", all_nodes, index=all_nodes.index("Restroom_2")
+            )
+        with col3:
+            language = st.selectbox("Preferred language", ["English", "Hindi", "Spanish", "French"])
+
+        if st.button("Get Directions", type="primary"):
+            if start == destination:
+                st.warning("You're already there!")
+            else:
+                with st.spinner("Finding the best route..."):
+                    directions, path, explanation = get_fan_directions(
+                        graph, simulator, start, destination, language
+                    )
+                st.success(directions)
+                st.caption(f"Why this route: {explanation}")
+
+                # ACCESSIBILITY: the highlighted line on the map below conveys
+                # the same route, but only visually - this numbered list is a
+                # real text equivalent, not dependent on seeing/parsing the chart.
+                st.markdown("**Route, step by step:**")
+                st.markdown("\n".join(f"{i+1}. {stop}" for i, stop in enumerate(path)))
+
+                fig = build_congestion_figure(graph, simulator, positions, highlight_path=path)
+                st.plotly_chart(fig, width="stretch", key="fan_map", config={})
+                st.caption(
+                    "🟢 Low &nbsp;&nbsp; 🟡 Moderate &nbsp;&nbsp; 🟠 High &nbsp;&nbsp; "
+                    "🔴 Critical &nbsp;&nbsp; 🔵 Chosen route",
+                    unsafe_allow_html=True,
                 )
-            st.success(directions)
-            st.caption(f"Why this route: {explanation}")
 
-            # ACCESSIBILITY: the highlighted line on the map below conveys
-            # the same route, but only visually - this numbered list is a
-            # real text equivalent, not dependent on seeing/parsing the chart.
-            st.markdown("**Route, step by step:**")
-            st.markdown("\n".join(f"{i+1}. {stop}" for i, stop in enumerate(path)))
+    else:
+        st.subheader("Getting to the Stadium")
+        st.caption(
+            "Compare transit options for reaching your gate, and see the sustainability "
+            "impact of each choice (see core/transport.py for the mock transit + CO₂ data)."
+        )
 
-            fig = build_congestion_figure(graph, simulator, positions, highlight_path=path)
-            st.plotly_chart(fig, width="stretch", key="fan_map", config={})
-            st.caption("🟢 Low &nbsp;&nbsp; 🟡 Moderate &nbsp;&nbsp; 🟠 High &nbsp;&nbsp; 🔴 Critical &nbsp;&nbsp; 🔵 Chosen route", unsafe_allow_html=True)
+        transit_gates = ["Gate_A", "Gate_B", "Gate_C"]
+        col1, col2 = st.columns(2)
+        with col1:
+            transit_gate = st.selectbox("Which gate are you headed to?", transit_gates)
+        with col2:
+            transit_language = st.selectbox(
+                "Preferred language", ["English", "Hindi", "Spanish", "French"], key="transit_language"
+            )
+
+        if st.button("Compare Transit Options", type="primary"):
+            with st.spinner("Comparing routes..."):
+                summary_text, transit_options, recommended = get_transit_directions(
+                    transit_gate, transit_language
+                )
+            st.success(summary_text)
+
+            st.markdown("**Options compared:**")
+            for opt in transit_options:
+                tag = " 🌱 **Recommended**" if opt.mode == recommended.mode else ""
+                st.markdown(f"- {opt.label} — ~{opt.total_minutes} min, ~{opt.co2_grams:.0f}g CO₂{tag}")
+
+            # Update the session-level sustainability counter (shown in the
+            # Organizer Dashboard tab) using the greenest option's real
+            # savings vs. driving alone - always real data, independent of
+            # mock/live AI mode.
+            st.session_state.total_co2_saved_grams += recommended.co2_saved_vs_car_grams
+            st.session_state.total_green_trips += 1
+            st.caption(
+                f"🌍 Choosing {recommended.mode} instead of driving alone saves an estimated "
+                f"{recommended.co2_saved_vs_car_grams:.0f}g of CO₂ for this trip."
+            )
+
+# ----------------------------------------------------------------------
+# TAB 3: Volunteer & Staff Board
+# ----------------------------------------------------------------------
+with tab3:
+    st.subheader("Live Task Board")
+    st.caption(
+        "Assignable task cards generated from the same live congestion data and incident "
+        "log the Organizer Agent reads - a dedicated view for volunteers and venue staff "
+        "(see core/tasks.py)."
+    )
+
+    if st.button("🔄 Refresh Tasks from Current Conditions"):
+        fresh_tasks = generate_tasks_from_state(
+            st.session_state.get("latest_congestion", simulator.get_all()),
+            st.session_state.incidents,
+        )
+        added = 0
+        for task in fresh_tasks:
+            if task.id not in st.session_state.volunteer_tasks:
+                st.session_state.volunteer_tasks[task.id] = task
+                added += 1
+        if added:
+            st.toast(f"Added {added} new task(s) to the board.")
+        else:
+            st.toast("Board is already up to date - no new tasks.")
+
+    tasks = sort_tasks_by_priority(list(st.session_state.volunteer_tasks.values()))
+
+    if not tasks:
+        st.info("No tasks yet - click 'Refresh Tasks from Current Conditions' to generate the board.")
+    else:
+        priority_badge = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}
+        for task in tasks:
+            with st.container(border=True):
+                card_col1, card_col2, card_col3 = st.columns([3, 1.2, 1.2])
+                with card_col1:
+                    badge = priority_badge.get(task.priority.upper(), "⚪")
+                    st.markdown(f"{badge} **{task.description}**")
+                    st.caption(f"📍 {task.location} · priority: {task.priority}")
+                with card_col2:
+                    task.assigned_to = st.text_input(
+                        "Assigned to",
+                        value=task.assigned_to or "",
+                        key=f"assignee_{task.id}",
+                        placeholder="Volunteer name",
+                    ) or None
+                with card_col3:
+                    task.status = st.selectbox(
+                        "Status",
+                        TASK_STATUSES,
+                        index=TASK_STATUSES.index(task.status),
+                        key=f"status_{task.id}",
+                    )
+
+        if st.button("🧹 Clear resolved tasks"):
+            st.session_state.volunteer_tasks = {
+                task_id: task
+                for task_id, task in st.session_state.volunteer_tasks.items()
+                if task.status != "RESOLVED"
+            }
+            st.rerun()
