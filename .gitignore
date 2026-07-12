@@ -19,6 +19,5 @@ Thumbs.db
 *.log
 
 *__pycache__/
-*__init__.py
 
 *.egg-info/
