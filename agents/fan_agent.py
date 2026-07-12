@@ -16,21 +16,40 @@ automatically switches over.
 """
 
 import os
+
 import streamlit as st
 from dotenv import load_dotenv
+
 from core.routing import congestion_weighted_path, explain_route_choice
+from core.transport import TransitOption, get_transit_options, recommend_greenest_option
 
 load_dotenv()
+
+
+def _get_groq_api_key() -> str | None:
+    """
+    Reads GROQ_API_KEY from either source - see organizer_agent.py's
+    version of this same helper for the full explanation of why
+    st.secrets.get() needs a try/except here rather than a plain `or`.
+    """
+    key = os.getenv("GROQ_API_KEY")
+    if key:
+        return key
+    try:
+        return st.secrets.get("GROQ_API_KEY")
+    except FileNotFoundError:
+        return None
+
 
 # Local dev reads from .env via os.getenv. Streamlit Community Cloud
 # doesn't deploy .env files - it injects secrets via st.secrets instead.
 # Check both so the same code works in both environments.
-GROQ_API_KEY = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
+GROQ_API_KEY = _get_groq_api_key()
 MODEL = "llama-3.1-8b-instant"  # fast model - plenty for short directions/translation
 
 _client = None
 if GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here":
-    from openai import OpenAI
+    from openai import OpenAI, OpenAIError
     _client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
 
@@ -44,7 +63,8 @@ Total approximate distance: {distance:.0f} meters.
 Reason this specific route was chosen: {explanation}
 
 Write these directions as 2-3 short, friendly, easy-to-follow sentences,
-in {language}. Naturally work in why this route was chosen, based on the reason given - don't just say "avoids crowds" generically."""
+in {language}. Naturally work in why this route was chosen, based on the
+reason given - don't just say "avoids crowds" generically."""
 
 
 def _mock_directions(path: list, distance: float, language: str, explanation: str) -> str:
@@ -96,8 +116,14 @@ def get_fan_directions(graph, simulator, start: str, destination: str, language:
             max_tokens=200,
             temperature=0.5,
         )
-        return response.choices[0].message.content, path, explanation
-    except Exception as e:
+        content = response.choices[0].message.content
+        if content is None:
+            # See organizer_agent.py's identical check for why: the SDK
+            # types this as str | None, so fall back to mock rather than
+            # let None reach st.success() downstream.
+            return _mock_directions(path, distance, language, explanation), path, explanation
+        return content, path, explanation
+    except OpenAIError as e:
         return (
             f"[AI temporarily unavailable: {e}]\n" + _mock_directions(path, distance, language, explanation),
             path,
@@ -105,10 +131,98 @@ def get_fan_directions(graph, simulator, start: str, destination: str, language:
         )
 
 
+def _build_transit_prompt(gate: str, options: list, recommended: TransitOption, language: str) -> str:
+    """Build the LLM prompt for the transit-comparison feature. Separate
+    function so it can be tweaked/tested in isolation, same pattern as
+    _build_prompt() above."""
+    options_description = "\n".join(
+        f"- {opt.label}: ~{opt.total_minutes} min total, ~{opt.co2_grams:.0f}g CO2 per person" for opt in options
+    )
+    gate_label = gate.replace("_", " ")
+    return f"""A fan wants to know how to get TO the stadium, before entering {gate_label}.
+Available transport options:
+{options_description}
+
+The greenest option is {recommended.label}, which saves about
+{recommended.co2_saved_vs_car_grams:.0f}g of CO2 per person compared to driving alone.
+
+Write 2-3 short, friendly sentences in {language} comparing these options and
+recommending the greenest one. Naturally work in the actual CO2 savings number
+as the reason - don't just say "it's eco-friendly" generically."""
+
+
+def _mock_transit_summary(gate: str, options: list, recommended: TransitOption, language: str) -> str:
+    """
+    PLACEHOLDER used only when no GROQ_API_KEY is configured.
+
+    The options, times, and CO2 numbers are always real (core.transport
+    logic doesn't need the LLM) - only the friendly phrasing/translation
+    is mocked, same approach as _mock_directions() above.
+    """
+    gate_label = gate.replace("_", " ")
+    options_lines = "\n".join(
+        f"  - {opt.label}: ~{opt.total_minutes} min, ~{opt.co2_grams:.0f}g CO2" for opt in options
+    )
+    return (
+        "[MOCK RESPONSE - add a real GROQ_API_KEY to .env for AI-written, translated comparisons]\n"
+        f"Options to reach {gate_label}:\n{options_lines}\n"
+        f"Greenest pick: {recommended.label} "
+        f"(saves ~{recommended.co2_saved_vs_car_grams:.0f}g CO2 vs driving alone).\n"
+        f"(Requested language: {language} - mock mode does not translate.)"
+    )
+
+
+def get_transit_directions(gate: str, language: str = "English"):
+    """
+    Main entry point for the transportation + sustainability feature: this
+    is the "how do I get to the stadium" mode of the Fan Assistant, distinct
+    from get_fan_directions() above (which routes *inside* the venue).
+
+    Args:
+        gate: which gate the fan is headed to (e.g. "Gate_A")
+        language: language to phrase the comparison in
+
+    Returns:
+        (summary_text, options, recommended):
+            - summary_text: friendly comparison of transit options (real
+              LLM output, or a mock placeholder - see MOCK MODE above)
+            - options: the full list of core.transport.TransitOption, for
+              display in the UI regardless of mock/live mode
+            - recommended: the greenest TransitOption (always real,
+              computed independently of mock/LLM mode) - used both for
+              display and to update the app's running sustainability
+              impact counter
+    """
+    options = get_transit_options(gate)
+    recommended = recommend_greenest_option(options)
+
+    if _client is None:
+        return _mock_transit_summary(gate, options, recommended, language), options, recommended
+
+    prompt = _build_transit_prompt(gate, options, recommended, language)
+    try:
+        response = _client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            temperature=0.5,
+        )
+        content = response.choices[0].message.content
+        if content is None:
+            return _mock_transit_summary(gate, options, recommended, language), options, recommended
+        return content, options, recommended
+    except OpenAIError as e:
+        return (
+            f"[AI temporarily unavailable: {e}]\n" + _mock_transit_summary(gate, options, recommended, language),
+            options,
+            recommended,
+        )
+
+
 if __name__ == "__main__":
     # Quick manual check - run from project root with: python -m agents.fan_agent
-    from core.venue import build_venue_graph
     from core.crowd_sim import CrowdSimulator
+    from core.venue import build_venue_graph
 
     G = build_venue_graph()
     sim = CrowdSimulator(G, seed=1)
@@ -119,3 +233,8 @@ if __name__ == "__main__":
     print(text)
     print("Path:", path)
     print("Explanation:", explanation)
+
+    transit_text, transit_options, greenest = get_transit_directions("Gate_A", language="English")
+    print("\n--- Transit comparison ---")
+    print(transit_text)
+    print("Recommended:", greenest.mode, f"(saves {greenest.co2_saved_vs_car_grams:.0f}g CO2)")

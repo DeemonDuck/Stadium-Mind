@@ -18,23 +18,49 @@ the real Groq API - no code changes needed anywhere else.
 from __future__ import annotations  # allows `dict | None` etc. on Python < 3.10
 
 import os
+
 import streamlit as st
 from dotenv import load_dotenv
+
 from core.incidents import sort_by_urgency
 
 load_dotenv()
 
+
+def _get_groq_api_key() -> str | None:
+    """
+    Reads GROQ_API_KEY from either source - local dev via .env/os.getenv,
+    or Streamlit Community Cloud via st.secrets (see module docstring).
+
+    st.secrets.get() raises FileNotFoundError (specifically Streamlit's
+    own StreamlitSecretNotFoundError) - it does NOT just return None -
+    when no secrets.toml exists anywhere, as opposed to the key merely
+    being absent from an existing one. That's the normal state for a
+    fresh clone or a CI runner that hasn't configured Streamlit secrets,
+    so it has to be caught here explicitly, or "mock mode needs zero
+    config" would be false: the import itself would crash before mock
+    mode ever got a chance to kick in.
+    """
+    key = os.getenv("GROQ_API_KEY")
+    if key:
+        return key
+    try:
+        return st.secrets.get("GROQ_API_KEY")
+    except FileNotFoundError:
+        return None
+
+
 # Local dev reads from .env via os.getenv. Streamlit Community Cloud
 # doesn't deploy .env files - it injects secrets via st.secrets instead.
 # Check both so the same code works in both environments.
-GROQ_API_KEY = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
+GROQ_API_KEY = _get_groq_api_key()
 MODEL = "llama-3.3-70b-versatile"  # stronger reasoning model - good fit for triage/prioritization
 
 # Only create the API client if a real key is present. This means the
 # `openai` package's config never has to run at all in mock mode.
 _client = None
 if GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here":
-    from openai import OpenAI
+    from openai import OpenAI, OpenAIError
     _client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
 
@@ -62,7 +88,7 @@ def _format_incidents(incidents: list) -> str:
     return "\n".join(inc.to_prompt_line() for inc in incidents)
 
 
-def _trend_phrase(trends: dict, node: str) -> str:
+def _trend_phrase(trends: dict | None, node: str) -> str:
     """
     Turn a node's trend info into a short natural-language fragment, e.g.
     ", up 18% recently, projected to reach critical in ~3 more updates".
@@ -88,7 +114,7 @@ def _trend_phrase(trends: dict, node: str) -> str:
     return ", " + " and ".join(parts) if parts else ""
 
 
-def _format_trends_for_prompt(congestion_snapshot: dict, trends: dict) -> str:
+def _format_trends_for_prompt(congestion_snapshot: dict, trends: dict | None) -> str:
     """Format trend info for every node that has a meaningful trend, for the LLM prompt."""
     if not trends:
         return "No trend data available."
@@ -145,7 +171,7 @@ def _mock_recommendation(graph, congestion_snapshot: dict, incidents: list, tren
     if not congestion_snapshot:
         return "[MOCK - no API key configured] No congestion data available yet."
 
-    worst_node = max(congestion_snapshot, key=congestion_snapshot.get)
+    worst_node = max(congestion_snapshot, key=lambda node: congestion_snapshot[node])
     worst_score = congestion_snapshot[worst_node]
     neighbors = list(graph.neighbors(worst_node)) if graph is not None else []
     affected = ", ".join(neighbors) if neighbors else "surrounding areas"
@@ -156,7 +182,10 @@ def _mock_recommendation(graph, congestion_snapshot: dict, incidents: list, tren
 
     lines = [
         "[MOCK RESPONSE - add a real GROQ_API_KEY to .env for live AI reasoning]",
-        f"Summary: {worst_node} is the most congested area at {worst_score}/100 ({_congestion_label(worst_score)}){trend_note}.",
+        (
+            f"Summary: {worst_node} is the most congested area at {worst_score}/100 "
+            f"({_congestion_label(worst_score)}){trend_note}."
+        ),
         "",
         "Priority 1:",
         f"  Action: Redirect incoming foot traffic away from {worst_node}.",
@@ -214,10 +243,21 @@ def get_organizer_recommendation(
             max_tokens=300,
             temperature=0.4,
         )
-        return response.choices[0].message.content
-    except Exception as e:
-        # A rate limit or network blip shouldn't crash a live demo -
-        # fall back to the mock so the show goes on.
+        content = response.choices[0].message.content
+        if content is None:
+            # The SDK types this as str | None (e.g. a tool-call-only or
+            # refused response has no text content) - fall back to the
+            # same mock so callers always get a usable string, not a
+            # silent None flowing into st.info().
+            return _mock_recommendation(graph, congestion_snapshot, incidents, trends)
+        return content
+    except OpenAIError as e:
+        # A rate limit, timeout, or connection blip shouldn't crash a live
+        # demo - fall back to the mock so the show goes on. Narrowed from a
+        # blind `except Exception` to the SDK's own exception hierarchy
+        # (covers RateLimitError, APITimeoutError, APIConnectionError,
+        # AuthenticationError, etc.) so this doesn't also swallow genuine
+        # bugs in our own code.
         return (
             f"[AI temporarily unavailable: {e}]\n"
             + _mock_recommendation(graph, congestion_snapshot, incidents, trends)
@@ -226,8 +266,8 @@ def get_organizer_recommendation(
 
 if __name__ == "__main__":
     # Quick manual check - run from project root with: python -m agents.organizer_agent
-    from core.venue import build_venue_graph
     from core.incidents import Incident
+    from core.venue import build_venue_graph
 
     G = build_venue_graph()
     sample_congestion = {"Gate_A": 85, "Gate_B": 30, "Section_2": 60}
