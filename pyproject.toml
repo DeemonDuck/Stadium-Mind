@@ -46,3 +46,7 @@ check_untyped_defs = true
 # MVP with type hints used where they add clarity (dataclasses, public
 # function signatures), not a fully-annotated codebase. check_untyped_defs
 # still catches real type errors inside unannotated functions.
+
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
