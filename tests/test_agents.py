@@ -36,13 +36,6 @@ from core.venue import build_venue_graph
 # organizer_agent.py
 # ----------------------------------------------------------------------
 
-def test_organizer_congestion_label_thresholds():
-    assert organizer_agent._congestion_label(10) == "low"
-    assert organizer_agent._congestion_label(40) == "moderate"
-    assert organizer_agent._congestion_label(60) == "high"
-    assert organizer_agent._congestion_label(90) == "critical"
-
-
 def test_organizer_format_incidents_reports_none_when_empty():
     assert organizer_agent._format_incidents([]) == "None reported"
 

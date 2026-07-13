@@ -27,6 +27,8 @@ from collections import deque
 
 import networkx as nx
 
+from core.congestion import CRITICAL_THRESHOLD, congestion_label
+
 
 class CrowdSimulator:
     """
@@ -93,18 +95,14 @@ class CrowdSimulator:
 
     def get_congestion_label(self, node: str) -> str:
         """
-        Convert a numeric score into a human-readable label.
+        Convert a node's current score into a human-readable label.
         Used both in the UI (color-coded metrics) and in LLM prompts,
         since "high" reads more naturally to a model than a raw number.
+
+        The bands themselves live in core/congestion.py, so the map, the
+        agents, and the task board can't drift apart on what "critical" means.
         """
-        score = self.get_congestion(node)
-        if score >= 75:
-            return "critical"
-        elif score >= 50:
-            return "high"
-        elif score >= 25:
-            return "moderate"
-        return "low"
+        return congestion_label(self.get_congestion(node))
 
     def get_trend(self, node: str) -> int:
         """
@@ -123,7 +121,7 @@ class CrowdSimulator:
             return 100 if newest > 0 else 0
         return round(((newest - oldest) / oldest) * 100)
 
-    def estimate_ticks_to_critical(self, node: str, critical_threshold: int = 75) -> int | None:
+    def estimate_ticks_to_critical(self, node: str, critical_threshold: int = CRITICAL_THRESHOLD) -> int | None:
         """
         Linearly extrapolate the recent trend to estimate how many more
         ticks until this node crosses the critical threshold.
@@ -149,8 +147,11 @@ class CrowdSimulator:
 
 
 if __name__ == "__main__":
-    # Quick manual check: python core/crowd_sim.py
-    from venue import build_venue_graph
+    # Quick manual check: python -m core.crowd_sim
+    # (the module-level `from core.congestion import ...` above needs the core
+    # package resolvable, so this runs as a module rather than a bare script -
+    # same convention as core/routing.py, core/visualization.py and agents/*.py)
+    from core.venue import build_venue_graph
 
     G = build_venue_graph()
     sim = CrowdSimulator(G, seed=1)

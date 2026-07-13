@@ -19,26 +19,10 @@ from __future__ import annotations  # allows `dict | None` etc. on Python < 3.10
 import networkx as nx
 
 from agents.llm_client import complete
+from core.congestion import congestion_label
 from core.incidents import sort_by_urgency
 
 MODEL = "llama-3.3-70b-versatile"  # stronger reasoning model - good fit for triage/prioritization
-
-
-def _congestion_label(score: int) -> str:
-    """
-    Small local copy of CrowdSimulator's labeling thresholds.
-    Duplicated on purpose rather than importing CrowdSimulator here -
-    this agent should only need plain data (snapshot/trend dicts), not a
-    live simulator instance, so it stays easy to test and easy to swap
-    data sources later.
-    """
-    if score >= 75:
-        return "critical"
-    elif score >= 50:
-        return "high"
-    elif score >= 25:
-        return "moderate"
-    return "low"
 
 
 def _format_incidents(incidents: list) -> str:
@@ -144,7 +128,7 @@ def _mock_recommendation(graph: nx.Graph, congestion_snapshot: dict, incidents: 
         "[MOCK RESPONSE - add a real GROQ_API_KEY to .env for live AI reasoning]",
         (
             f"Summary: {worst_node} is the most congested area at {worst_score}/100 "
-            f"({_congestion_label(worst_score)}){trend_note}."
+            f"({congestion_label(worst_score)}){trend_note}."
         ),
         "",
         "Priority 1:",

@@ -15,10 +15,38 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from core.congestion import CRITICAL_THRESHOLD, HIGH_THRESHOLD, MODERATE_THRESHOLD, congestion_label
 from core.crowd_sim import CrowdSimulator
 from core.incidents import Incident, sort_by_urgency
 from core.routing import congestion_weighted_path, explain_route_choice
 from core.venue import build_venue_graph, get_nodes_by_type
+
+
+def test_congestion_label_bands_including_their_boundaries():
+    """The 0-100 scale every other module reads congestion through. Asserts
+    the exact boundary values, not just the middle of each band - an
+    off-by-one here would silently disagree with the map, the agents, and the
+    task board all at once, since core/congestion.py is now the one source
+    for all three."""
+    assert congestion_label(0) == "low"
+    assert congestion_label(MODERATE_THRESHOLD - 1) == "low"
+    assert congestion_label(MODERATE_THRESHOLD) == "moderate"
+    assert congestion_label(HIGH_THRESHOLD - 1) == "moderate"
+    assert congestion_label(HIGH_THRESHOLD) == "high"
+    assert congestion_label(CRITICAL_THRESHOLD - 1) == "high"
+    assert congestion_label(CRITICAL_THRESHOLD) == "critical"
+    assert congestion_label(100) == "critical"
+
+
+def test_crowd_simulator_label_matches_the_shared_congestion_bands():
+    """CrowdSimulator.get_congestion_label() must agree with the shared
+    congestion_label() for the node's actual score - it delegates to it, and
+    this pins that so it can't quietly grow its own copy of the thresholds
+    again."""
+    G = build_venue_graph()
+    sim = CrowdSimulator(G, seed=1)
+    for node in G.nodes:
+        assert sim.get_congestion_label(node) == congestion_label(sim.get_congestion(node))
 
 
 def test_venue_graph_has_expected_nodes():

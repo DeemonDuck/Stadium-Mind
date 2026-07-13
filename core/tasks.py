@@ -30,15 +30,16 @@ from datetime import datetime
 
 import networkx as nx
 
+from core.congestion import CRITICAL_THRESHOLD, HIGH_THRESHOLD
 from core.incidents import SEVERITY_LEVELS
 
 TASK_STATUSES = ["OPEN", "ASSIGNED", "RESOLVED"]
 
-# A congestion hotspot at or above this score generates a task. Matches
-# the "high" congestion_label threshold in core/crowd_sim.py, so a task
-# appears exactly when the dashboard would already show that node as
-# orange/red - no separate threshold to keep in sync.
-DEFAULT_CONGESTION_THRESHOLD = 50
+# A congestion hotspot at or above this score generates a task. This IS the
+# "high" band from core/congestion.py, not a number that happens to match it,
+# so a task appears exactly when the dashboard would already be showing that
+# node as orange/red - there's no second threshold that could drift out of sync.
+DEFAULT_CONGESTION_THRESHOLD = HIGH_THRESHOLD
 
 
 @dataclass
@@ -114,7 +115,7 @@ def generate_tasks_from_state(
 
     hotspots = {node: score for node, score in congestion_snapshot.items() if score >= congestion_threshold}
     for node, score in sorted(hotspots.items(), key=lambda item: -item[1]):
-        priority = "CRITICAL" if score >= 75 else "HIGH"
+        priority = "CRITICAL" if score >= CRITICAL_THRESHOLD else "HIGH"
         tasks.append(
             Task(
                 id=f"congestion::{node}",
