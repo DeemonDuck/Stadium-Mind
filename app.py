@@ -2,13 +2,22 @@
 app.py
 
 StadiumMind's Streamlit dashboard - the single entry point tying everything
-together. Two tabs, sharing one venue graph, one crowd simulator, and one
-cached layout, used by BOTH tabs:
+together. Three tabs, all sharing one venue graph, one crowd simulator, one
+cached layout, and one incident log:
 
   - Organizer Dashboard: live visual congestion map + predictive trend
-    metrics + structured incident log + "Ask Stadium Brain"
-  - Fan Assistant: pick start/destination/language, see the chosen route
-    highlighted on the same map, with an explanation of why it was chosen
+    metrics + structured incident log + "Ask Stadium Brain" + the
+    session-wide sustainability (CO2 saved) panel
+  - Fan Assistant: navigate inside the venue (pick start/destination/
+    language, see the chosen route highlighted on the same map, with an
+    explanation of why it was chosen), or compare transit options for
+    getting TO the stadium, with per-trip CO2 estimates
+  - Volunteer & Staff Board: assignable task cards generated from that same
+    congestion + incident data, with on-demand task translation
+
+That shared state is the point: the same intelligence that tells an organizer
+"Gate_B is about to be a problem" is what routes fans away from Gate_B and what
+puts "assist at Gate_B" on a volunteer's task list.
 
 AUTO-TICK NOTE: the live congestion panel runs inside an st.fragment, which
 lets it auto-refresh on a timer WITHOUT rerunning the whole page - so the

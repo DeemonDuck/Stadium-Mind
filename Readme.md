@@ -161,7 +161,7 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -v
 ```
 
-53 tests covering the venue graph, crowd simulation, congestion-aware routing, incident logic, transit/CO₂ scoring, volunteer task generation, and the deterministic (non-LLM) parts of both agents — prompt builders and mock-mode fallbacks. Runs automatically on every push via GitHub Actions across Python 3.10–3.12, alongside a separate lint (`ruff check .`) and type-check (`mypy .`) job.
+64 tests covering the venue graph, crowd simulation, congestion-aware routing, incident logic, transit/CO₂ scoring, volunteer task generation, the Streamlit app's three tabs (via `streamlit.testing.v1.AppTest`), and the deterministic (non-LLM) parts of both agents — prompt builders and mock-mode fallbacks. Mock mode is pinned by an autouse fixture in `tests/conftest.py`, so the suite is hermetic: it never calls the network and passes identically with or without a real API key configured. Runs automatically on every push via GitHub Actions across Python 3.10–3.12, alongside a separate lint (`ruff check .`) and type-check (`mypy .`) job.
 
 ---
 
