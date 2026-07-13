@@ -29,7 +29,8 @@ Run with: streamlit run app.py
 import streamlit as st
 
 from agents.fan_agent import get_fan_directions, get_transit_directions, translate_task_description
-from agents.organizer_agent import GROQ_API_KEY, get_organizer_recommendation
+from agents.llm_client import GROQ_API_KEY
+from agents.organizer_agent import get_organizer_recommendation
 from core.crowd_sim import CrowdSimulator
 from core.graph_layout import compute_layout
 from core.incidents import Incident, sort_by_urgency

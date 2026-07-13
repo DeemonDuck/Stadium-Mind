@@ -8,61 +8,20 @@ structured Incident objects, and asks an LLM to produce a prioritized,
 plain-English action plan for stadium staff.
 
 MOCK MODE:
-If no GROQ_API_KEY is found in the environment, this falls back to a
-rule-based mock response instead of crashing or blocking development.
-This lets you build and test the full app before wiring up a real key.
-Once GROQ_API_KEY is set in .env, this automatically switches to calling
-the real Groq API - no code changes needed anywhere else.
+If no GROQ_API_KEY is configured, this falls back to a rule-based mock
+response instead of crashing or blocking development. The mock still reacts
+to real data, so the demo stays sensible. See agents/llm_client.py, which
+owns the client and that fallback policy for both agents.
 """
 
 from __future__ import annotations  # allows `dict | None` etc. on Python < 3.10
 
-import os
-
 import networkx as nx
-import streamlit as st
-from dotenv import load_dotenv
 
+from agents.llm_client import complete
 from core.incidents import sort_by_urgency
 
-load_dotenv()
-
-
-def _get_groq_api_key() -> str | None:
-    """
-    Reads GROQ_API_KEY from either source - local dev via .env/os.getenv,
-    or Streamlit Community Cloud via st.secrets (see module docstring).
-
-    st.secrets.get() raises FileNotFoundError (specifically Streamlit's
-    own StreamlitSecretNotFoundError) - it does NOT just return None -
-    when no secrets.toml exists anywhere, as opposed to the key merely
-    being absent from an existing one. That's the normal state for a
-    fresh clone or a CI runner that hasn't configured Streamlit secrets,
-    so it has to be caught here explicitly, or "mock mode needs zero
-    config" would be false: the import itself would crash before mock
-    mode ever got a chance to kick in.
-    """
-    key = os.getenv("GROQ_API_KEY")
-    if key:
-        return key
-    try:
-        return st.secrets.get("GROQ_API_KEY")
-    except FileNotFoundError:
-        return None
-
-
-# Local dev reads from .env via os.getenv. Streamlit Community Cloud
-# doesn't deploy .env files - it injects secrets via st.secrets instead.
-# Check both so the same code works in both environments.
-GROQ_API_KEY = _get_groq_api_key()
 MODEL = "llama-3.3-70b-versatile"  # stronger reasoning model - good fit for triage/prioritization
-
-# Only create the API client if a real key is present. This means the
-# `openai` package's config never has to run at all in mock mode.
-_client = None
-if GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here":
-    from openai import OpenAI, OpenAIError
-    _client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
 
 def _congestion_label(score: int) -> str:
@@ -233,36 +192,13 @@ def get_organizer_recommendation(
     """
     incidents = sort_by_urgency(incidents) if incidents else []
 
-    if _client is None:
-        return _mock_recommendation(graph, congestion_snapshot, incidents, trends)
-
-    prompt = _build_prompt(congestion_snapshot, incidents, trends)
-    try:
-        response = _client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=300,
-            temperature=0.4,
-        )
-        content = response.choices[0].message.content
-        if content is None:
-            # The SDK types this as str | None (e.g. a tool-call-only or
-            # refused response has no text content) - fall back to the
-            # same mock so callers always get a usable string, not a
-            # silent None flowing into st.info().
-            return _mock_recommendation(graph, congestion_snapshot, incidents, trends)
-        return content
-    except OpenAIError as e:
-        # A rate limit, timeout, or connection blip shouldn't crash a live
-        # demo - fall back to the mock so the show goes on. Narrowed from a
-        # blind `except Exception` to the SDK's own exception hierarchy
-        # (covers RateLimitError, APITimeoutError, APIConnectionError,
-        # AuthenticationError, etc.) so this doesn't also swallow genuine
-        # bugs in our own code.
-        return (
-            f"[AI temporarily unavailable: {e}]\n"
-            + _mock_recommendation(graph, congestion_snapshot, incidents, trends)
-        )
+    return complete(
+        _build_prompt(congestion_snapshot, incidents, trends),
+        model=MODEL,
+        max_tokens=300,
+        temperature=0.4,
+        fallback=lambda: _mock_recommendation(graph, congestion_snapshot, incidents, trends),
+    )
 
 
 if __name__ == "__main__":

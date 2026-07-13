@@ -8,51 +8,22 @@ in the fan's chosen language - explicitly referencing WHY that route was
 chosen, not just what it is.
 
 MOCK MODE:
-If no GROQ_API_KEY is found, falls back to an untranslated template
-response instead of crashing. The route and its explanation are always
-REAL (routing/explanation logic doesn't need the LLM) - only the friendly
-phrasing/translation is mocked. Once GROQ_API_KEY is set in .env, this
-automatically switches over.
+If no GROQ_API_KEY is configured, falls back to an untranslated template
+response instead of crashing. The route, distance, explanation, transit
+times and CO2 numbers are always REAL - none of that needs the LLM. Only
+the friendly phrasing and the translation are mocked. See
+agents/llm_client.py, which owns the client and that fallback policy for
+both agents.
 """
 
-import os
-
 import networkx as nx
-import streamlit as st
-from dotenv import load_dotenv
 
+from agents.llm_client import complete
 from core.crowd_sim import CrowdSimulator
 from core.routing import congestion_weighted_path, explain_route_choice
 from core.transport import TransitOption, get_transit_options, recommend_greenest_option
 
-load_dotenv()
-
-
-def _get_groq_api_key() -> str | None:
-    """
-    Reads GROQ_API_KEY from either source - see organizer_agent.py's
-    version of this same helper for the full explanation of why
-    st.secrets.get() needs a try/except here rather than a plain `or`.
-    """
-    key = os.getenv("GROQ_API_KEY")
-    if key:
-        return key
-    try:
-        return st.secrets.get("GROQ_API_KEY")
-    except FileNotFoundError:
-        return None
-
-
-# Local dev reads from .env via os.getenv. Streamlit Community Cloud
-# doesn't deploy .env files - it injects secrets via st.secrets instead.
-# Check both so the same code works in both environments.
-GROQ_API_KEY = _get_groq_api_key()
 MODEL = "llama-3.1-8b-instant"  # fast model - plenty for short directions/translation
-
-_client = None
-if GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here":
-    from openai import OpenAI, OpenAIError
-    _client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
 
 
 def _build_prompt(path: list, distance: float, language: str, explanation: str) -> str:
@@ -109,30 +80,14 @@ def get_fan_directions(
     path, distance = congestion_weighted_path(graph, simulator, start, destination)
     explanation = explain_route_choice(graph, simulator, path)
 
-    if _client is None:
-        return _mock_directions(path, distance, language, explanation), path, explanation
-
-    prompt = _build_prompt(path, distance, language, explanation)
-    try:
-        response = _client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=200,
-            temperature=0.5,
-        )
-        content = response.choices[0].message.content
-        if content is None:
-            # See organizer_agent.py's identical check for why: the SDK
-            # types this as str | None, so fall back to mock rather than
-            # let None reach st.success() downstream.
-            return _mock_directions(path, distance, language, explanation), path, explanation
-        return content, path, explanation
-    except OpenAIError as e:
-        return (
-            f"[AI temporarily unavailable: {e}]\n" + _mock_directions(path, distance, language, explanation),
-            path,
-            explanation,
-        )
+    directions = complete(
+        _build_prompt(path, distance, language, explanation),
+        model=MODEL,
+        max_tokens=200,
+        temperature=0.5,
+        fallback=lambda: _mock_directions(path, distance, language, explanation),
+    )
+    return directions, path, explanation
 
 
 def _build_transit_prompt(gate: str, options: list, recommended: TransitOption, language: str) -> str:
@@ -200,27 +155,14 @@ def get_transit_directions(gate: str, language: str = "English") -> tuple[str, l
     options = get_transit_options(gate)
     recommended = recommend_greenest_option(options)
 
-    if _client is None:
-        return _mock_transit_summary(gate, options, recommended, language), options, recommended
-
-    prompt = _build_transit_prompt(gate, options, recommended, language)
-    try:
-        response = _client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=200,
-            temperature=0.5,
-        )
-        content = response.choices[0].message.content
-        if content is None:
-            return _mock_transit_summary(gate, options, recommended, language), options, recommended
-        return content, options, recommended
-    except OpenAIError as e:
-        return (
-            f"[AI temporarily unavailable: {e}]\n" + _mock_transit_summary(gate, options, recommended, language),
-            options,
-            recommended,
-        )
+    summary = complete(
+        _build_transit_prompt(gate, options, recommended, language),
+        model=MODEL,
+        max_tokens=200,
+        temperature=0.5,
+        fallback=lambda: _mock_transit_summary(gate, options, recommended, language),
+    )
+    return summary, options, recommended
 
 
 def _build_task_translation_prompt(description: str, language: str) -> str:
@@ -274,23 +216,13 @@ def translate_task_description(description: str, language: str = "English") -> s
     if language == "English":
         return description
 
-    if _client is None:
-        return _mock_task_translation(description, language)
-
-    prompt = _build_task_translation_prompt(description, language)
-    try:
-        response = _client.chat.completions.create(
-            model=MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=100,
-            temperature=0.3,
-        )
-        content = response.choices[0].message.content
-        if content is None:
-            return _mock_task_translation(description, language)
-        return content.strip()
-    except OpenAIError as e:
-        return f"[AI temporarily unavailable: {e}]\n" + _mock_task_translation(description, language)
+    return complete(
+        _build_task_translation_prompt(description, language),
+        model=MODEL,
+        max_tokens=100,
+        temperature=0.3,
+        fallback=lambda: _mock_task_translation(description, language),
+    )
 
 
 if __name__ == "__main__":
