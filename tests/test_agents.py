@@ -167,6 +167,28 @@ def test_get_transit_directions_runs_in_mock_mode_without_a_key():
     assert recommended.mode == "metro"  # metro is greenest at every named gate
 
 
+def test_supported_languages_lead_with_the_default_and_have_no_duplicates():
+    """app.py drives all three of its language selectors off this one list, so
+    its shape is a real contract: DEFAULT_LANGUAGE must come first (it's the
+    selectbox's default selection, and the source language every string in the
+    app is already written in), and a duplicate would render twice in the UI."""
+    assert fan_agent.SUPPORTED_LANGUAGES[0] == fan_agent.DEFAULT_LANGUAGE
+    assert len(set(fan_agent.SUPPORTED_LANGUAGES)) == len(fan_agent.SUPPORTED_LANGUAGES)
+
+
+def test_translate_task_description_is_a_noop_for_every_language_but_the_default():
+    """The no-op short-circuit must fire for DEFAULT_LANGUAGE and nothing else -
+    otherwise a volunteer picking Arabic would silently get English back."""
+    description = "Respond to: Medical situation"
+    assert fan_agent.translate_task_description(description, fan_agent.DEFAULT_LANGUAGE) == description
+    for language in fan_agent.SUPPORTED_LANGUAGES:
+        if language == fan_agent.DEFAULT_LANGUAGE:
+            continue
+        translated = fan_agent.translate_task_description(description, language)
+        assert translated != description, f"{language} should not short-circuit to the English source"
+        assert "[MOCK" in translated  # mock mode is pinned by conftest.py
+
+
 def test_translate_task_description_is_a_noop_for_english():
     """English is the source language of every Task.description - no LLM
     call needed, so callers can invoke this unconditionally."""

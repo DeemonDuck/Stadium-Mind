@@ -28,7 +28,13 @@ Run with: streamlit run app.py
 
 import streamlit as st
 
-from agents.fan_agent import get_fan_directions, get_transit_directions, translate_task_description
+from agents.fan_agent import (
+    DEFAULT_LANGUAGE,
+    SUPPORTED_LANGUAGES,
+    get_fan_directions,
+    get_transit_directions,
+    translate_task_description,
+)
 from agents.llm_client import GROQ_API_KEY
 from agents.organizer_agent import get_organizer_recommendation
 from core.crowd_sim import CrowdSimulator
@@ -243,7 +249,7 @@ with tab2:
                 "Destination", all_nodes, index=all_nodes.index("Restroom_2")
             )
         with col3:
-            language = st.selectbox("Preferred language", ["English", "Hindi", "Spanish", "French"])
+            language = st.selectbox("Preferred language", SUPPORTED_LANGUAGES)
 
         if st.button("Get Directions", type="primary"):
             if start == destination:
@@ -283,7 +289,7 @@ with tab2:
             transit_gate = st.selectbox("Which gate are you headed to?", transit_gates)
         with col2:
             transit_language = st.selectbox(
-                "Preferred language", ["English", "Hindi", "Spanish", "French"], key="transit_language"
+                "Preferred language", SUPPORTED_LANGUAGES, key="transit_language"
             )
 
         if st.button("Compare Transit Options", type="primary"):
@@ -343,7 +349,7 @@ with tab3:
         # so multilingual support covers this persona too, not just fans.
         task_language = st.selectbox(
             "Task language",
-            ["English", "Hindi", "Spanish", "French"],
+            SUPPORTED_LANGUAGES,
             key="task_board_language",
         )
 
@@ -359,7 +365,7 @@ with tab3:
                 with card_col1:
                     badge = priority_badge.get(task.priority.upper(), "⚪")
                     st.markdown(f"{badge} **{task.description}**")
-                    if task_language != "English":
+                    if task_language != DEFAULT_LANGUAGE:
                         cache_key = (task.id, task_language)
                         if cache_key not in st.session_state.task_translations:
                             st.session_state.task_translations[cache_key] = translate_task_description(

@@ -58,12 +58,12 @@ flowchart TD
 **🧭 Fan Assistant**
 - *Navigate inside the venue:* congestion-aware routing that dynamically avoids crowded areas, not just the shortest path, with a plain-English explanation of *why* a route was chosen
 - *Getting to the stadium:* compares metro, bus, shuttle-from-parking, and driving for reaching a specific gate — times plus a real CO₂-per-trip estimate for each, with the greenest option called out
-- Multilingual directions and transit comparisons (English, Hindi, Spanish, French)
+- Multilingual directions and transit comparisons in **10 languages** — English, Spanish and French (the three host nations'), German (completing FIFA's four official languages), plus Portuguese, Arabic, Hindi, Japanese, Korean and Chinese
 
 **🦺 Volunteer & Staff Board**
 - Assignable task cards generated directly from live congestion hotspots and open incidents — the same data the Organizer Agent reasons over, presented as a to-do list instead of a paragraph
 - Assign a name and track status (Open → Assigned → Resolved) per task; refreshing the board adds new tasks without touching ones already assigned
-- Task descriptions can be translated on demand (English, Hindi, Spanish, French) — the same translate-with-mock-fallback pattern the Fan Assistant uses, so a Cup-scale international volunteer team isn't left with an English-only board
+- Task descriptions can be translated on demand into the same 10 languages — reusing the exact translate-with-mock-fallback pattern the Fan Assistant uses, so a Cup-scale international volunteer team isn't left with an English-only board
 
 **♿ Accessibility**
 - Every congestion score is shown as visible text, not conveyed by color alone
@@ -85,7 +85,7 @@ The brief names eight themes and four groups to help. Every one is covered:
 | Accessibility | Text equivalents for every visual element |
 | Operational intelligence | Organizer Agent's structured recommendations |
 | Real-time decision support | Auto-refreshing dashboard + priority-ranked actions |
-| Multilingual assistance | 4-language directions/transit comparisons (Fan Assistant) + translated task cards (Volunteer & Staff Board) |
+| Multilingual assistance | 10-language directions/transit comparisons (Fan Assistant) + translated task cards (Volunteer & Staff Board) |
 | Transportation | "Getting to the Stadium" transit comparison |
 | Sustainability | CO₂-per-trip estimates + session-wide savings tracker |
 
@@ -163,7 +163,7 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -v
 ```
 
-65 tests covering the venue graph, crowd simulation, the shared congestion bands, congestion-aware routing, incident logic, transit/CO₂ scoring, volunteer task generation, the Streamlit app's three tabs (via `streamlit.testing.v1.AppTest`), and the deterministic (non-LLM) parts of both agents — prompt builders and mock-mode fallbacks. Mock mode is pinned by an autouse fixture in `tests/conftest.py`, so the suite is hermetic: it never calls the network and passes identically with or without a real API key configured. Runs automatically on every push via GitHub Actions across Python 3.10–3.12, alongside a separate lint (`ruff check .`) and type-check (`mypy .`) job.
+67 tests covering the venue graph, crowd simulation, the shared congestion bands, congestion-aware routing, incident logic, transit/CO₂ scoring, volunteer task generation, the supported-language list, the Streamlit app's three tabs (via `streamlit.testing.v1.AppTest`), and the deterministic (non-LLM) parts of both agents — prompt builders and mock-mode fallbacks. Mock mode is pinned by an autouse fixture in `tests/conftest.py`, so the suite is hermetic: it never calls the network and passes identically with or without a real API key configured. Runs automatically on every push via GitHub Actions across Python 3.10–3.12, alongside a separate lint (`ruff check .`) and type-check (`mypy .`) job.
 
 ---
 

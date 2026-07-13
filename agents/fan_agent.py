@@ -25,6 +25,39 @@ from core.transport import TransitOption, get_transit_options, recommend_greenes
 
 MODEL = "llama-3.1-8b-instant"  # fast model - plenty for short directions/translation
 
+# The source language of every string this app generates - route explanations,
+# task descriptions, mock responses. Translating INTO it is a no-op, which is
+# why translate_task_description() can short-circuit rather than burn an LLM
+# call re-writing English as English.
+DEFAULT_LANGUAGE = "English"
+
+# Every language the Fan Assistant and the Volunteer & Staff Board offer.
+# Defined here, next to the code that actually does the translating, so the UI
+# can't offer a language the agent was never wired for - app.py reads this list
+# rather than hardcoding its own copy in each of its three language selectors.
+#
+# Chosen for the brief's tournament rather than picked arbitrarily:
+#   - English / Spanish / French are the three host nations' languages
+#     (USA, Mexico, Canada - French being co-official in Canada).
+#   - German rounds out FIFA's four official languages.
+#   - Portuguese, Arabic, Hindi, Japanese, Korean and Chinese cover the largest
+#     travelling-fan and diaspora populations a Cup-scale event actually sees.
+#
+# Adding another is now a one-line change here, and it shows up in all three
+# selectors at once. English stays first so it's the default selection.
+SUPPORTED_LANGUAGES = [
+    DEFAULT_LANGUAGE,
+    "Spanish",
+    "French",
+    "German",
+    "Portuguese",
+    "Arabic",
+    "Hindi",
+    "Japanese",
+    "Korean",
+    "Chinese",
+]
+
 
 def _build_prompt(path: list[str], distance: float, language: str, explanation: str) -> str:
     """Build the LLM prompt. Separate function so it can be tweaked/tested in isolation."""
@@ -58,7 +91,11 @@ def _mock_directions(path: list[str], distance: float, language: str, explanatio
 
 
 def get_fan_directions(
-    graph: nx.Graph, simulator: CrowdSimulator, start: str, destination: str, language: str = "English"
+    graph: nx.Graph,
+    simulator: CrowdSimulator,
+    start: str,
+    destination: str,
+    language: str = DEFAULT_LANGUAGE,
 ) -> tuple[str, list[str], str]:
     """
     Main entry point used by app.py.
@@ -135,7 +172,9 @@ def _mock_transit_summary(
     )
 
 
-def get_transit_directions(gate: str, language: str = "English") -> tuple[str, list[TransitOption], TransitOption]:
+def get_transit_directions(
+    gate: str, language: str = DEFAULT_LANGUAGE
+) -> tuple[str, list[TransitOption], TransitOption]:
     """
     Main entry point for the transportation + sustainability feature: this
     is the "how do I get to the stadium" mode of the Fan Assistant, distinct
@@ -194,7 +233,7 @@ def _mock_task_translation(description: str, language: str) -> str:
     return f"[MOCK - {language} translation unavailable without a GROQ_API_KEY] {description}"
 
 
-def translate_task_description(description: str, language: str = "English") -> str:
+def translate_task_description(description: str, language: str = DEFAULT_LANGUAGE) -> str:
     """
     Translate a single Volunteer & Staff Board task description (see
     core/tasks.py) into the requested language.
@@ -208,16 +247,16 @@ def translate_task_description(description: str, language: str = "English") -> s
 
     Args:
         description: the English task description (from core.tasks.Task)
-        language: language to translate into. "English" is a no-op and
-            skips the LLM call entirely, since the source text already IS
-            English - callers can call this unconditionally without
-            special-casing the default language themselves.
+        language: language to translate into, from SUPPORTED_LANGUAGES.
+            DEFAULT_LANGUAGE is a no-op and skips the LLM call entirely,
+            since the source text already IS English - callers can call this
+            unconditionally without special-casing the default themselves.
 
     Returns:
         Translated text (real or mock, per MOCK MODE rules above), or the
-        original description unchanged when language == "English".
+        original description unchanged when language is DEFAULT_LANGUAGE.
     """
-    if language == "English":
+    if language == DEFAULT_LANGUAGE:
         return description
 
     return complete(
