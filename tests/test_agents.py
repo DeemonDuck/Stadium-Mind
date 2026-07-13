@@ -11,8 +11,12 @@ Deliberately does NOT test actual LLM output (get_organizer_recommendation
 / get_fan_directions / get_transit_directions when a real client is
 configured) - that's non-deterministic and environment-dependent. This
 file tests everything around those calls: the prompt text they build, and
-the mock responses returned when no GROQ_API_KEY is configured (which is
-exactly the mode this test suite runs in, since no key is set in CI).
+the mock responses they fall back to.
+
+Mock mode is guaranteed by the autouse fixture in tests/conftest.py, which
+pins both agents' _client to None - so these tests pass identically whether
+or not the machine running them has a real GROQ_API_KEY configured, and
+never make a network call either way.
 
 Run with: pytest tests/test_agents.py -v
 """
